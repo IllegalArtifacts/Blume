@@ -40,6 +40,12 @@
             display: none;
         }
 
+        .file-input-container label {
+            font-size: 2.2em; /* Adjusted font size */
+            font-weight: bold; /* Adjusted font weight */
+            margin-bottom: 10px; /* Space between label and input */
+        }
+
         .file-input-container:hover {
             background-color: #e3ff88;
         }
@@ -113,17 +119,18 @@
             border-top: 2px solid black;
             margin: 10px 0;
         }
+
     </style>
 </head>
 <body>
     <div class="container">
         <div class="file-input-container">
-            <label for="imageInput">Upload Image to Overlay</label>
+            <label for="imageInput">UPLOAD IMAGE TO OVERLAY</label>
             <input type="file" id="imageInput" accept="image/*" class="file-input">
         </div>
 
         <div class="file-input-container">
-            <label for="overlayInput">Upload Custom Overlay Image</label>
+            <label for="overlayInput">UPLOAD CUSTOM OVERLAY IMAGE</label>
             <input type="file" id="overlayInput" accept="image/*" class="file-input">
         </div>
 
@@ -162,6 +169,7 @@
 
         let isDragging = false, isResizing = false;
         let startX, startY, initialX, initialY;
+        let selectedOverlayInitialWidth, selectedOverlayInitialHeight;
 
         imgInput.addEventListener('change', handleImage);
         ovInput.addEventListener('change', handleCustomOv);
@@ -169,6 +177,12 @@
         canvas.addEventListener('mousedown', handleMouseDown);
         canvas.addEventListener('mousemove', handleMouseMove);
         canvas.addEventListener('mouseup', handleMouseUp);
+        document.addEventListener('keydown', handleKeyDown);
+        saveBtn.addEventListener('click', saveImage);
+        document.getElementById('rotateLeft').addEventListener('click', rotateLeft);
+        document.getElementById('rotateRight').addEventListener('click', rotateRight);
+        document.getElementById('flipHorizontal').addEventListener('click', flipHorizontal);
+        document.getElementById('flipVertical').addEventListener('click', flipVertical);
 
         function fetchOvGallery() {
             const firstSetUrls = [
@@ -235,6 +249,7 @@
 
             firstSetUrls.forEach(url => {
                 const img = document.createElement('img');
+                img.crossOrigin = "anonymous";
                 img.src = url;
                 img.onclick = () => selectOverlay(img.src);
                 firstSet.appendChild(img);
@@ -242,6 +257,7 @@
 
             secondSetUrls.forEach(url => {
                 const img = document.createElement('img');
+                img.crossOrigin = "anonymous";
                 img.src = url;
                 img.onclick = () => selectOverlay(img.src);
                 secondSet.appendChild(img);
@@ -260,6 +276,7 @@
                 flipY: 1,
                 isSelected: false
             };
+            overlay.img.crossOrigin = 'anonymous';
             overlay.img.src = src;
             overlay.img.onload = () => {
                 overlays.push(overlay);
@@ -283,12 +300,12 @@
                 customOvImg.onload = () => {
                     customOvSrc = customOvImg.src;
                     selectOverlay(customOvSrc);
-                }
+                };
             }
         }
 
-        function drawCanvas() {
-            const containerWidth = document.querySelector('.container').offsetWidth * 0.75; // Scale down to 75%
+        function drawCanvas(showBoundingBoxes = true) {
+            const containerWidth = document.querySelector('.container').offsetWidth * 0.75;
             canvas.width = containerWidth; 
             canvas.height = (baseImg.naturalHeight / baseImg.naturalWidth) * canvas.width; 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -304,71 +321,47 @@
                 ctx.scale(overlay.flipX, overlay.flipY);
                 ctx.drawImage(overlay.img, -overlay.w / 2, -overlay.h / 2, overlay.w, overlay.h);
                 ctx.restore();
-                
-                if (overlay === selectedOverlay) {
+
+                if (showBoundingBoxes && overlay === selectedOverlay) {
                     drawBoundingBox(overlay);
                 }
             });
         }
 
-        function drawBoundingBox(overlay) {
-            ctx.save();
-            ctx.strokeStyle = 'blue';
-            ctx.setLineDash([5, 5]);
-            ctx.strokeRect(overlay.x, overlay.y, overlay.w, overlay.h);
-            ctx.restore();
-        }
+        function handleMouseDown(e) {
+            const mousePos = getMousePos(e);
 
-        function handleMouseDown(event) {
-            const mouseX = event.offsetX;
-            const mouseY = event.offsetY;
-
-            selectedOverlay = null;
-            for (const overlay of overlays) {
-                if (mouseX >= overlay.x && mouseX <= overlay.x + overlay.w &&
-                    mouseY >= overlay.y && mouseY <= overlay.y + overlay.h) {
-                    selectedOverlay = overlay;
-                    break;
-                }
-            }
-
+            // Select an overlay by clicking on it
+            selectedOverlay = overlays.find(overlay => isMouseOverOverlay(mousePos, overlay));
             if (selectedOverlay) {
-                startX = mouseX;
-                startY = mouseY;
-                initialX = selectedOverlay.x;
-                initialY = selectedOverlay.y;
-
-                if (mouseX > selectedOverlay.x + selectedOverlay.w - 10 &&
-                    mouseY > selectedOverlay.y + selectedOverlay.h - 10) {
+                if (isMouseOverResizeHandle(mousePos, selectedOverlay)) {
                     isResizing = true;
+                    selectedOverlayInitialWidth = selectedOverlay.w;
+                    selectedOverlayInitialHeight = selectedOverlay.h;
                 } else {
                     isDragging = true;
                 }
+                startX = mousePos.x;
+                startY = mousePos.y;
             }
+            drawCanvas();
         }
 
-        function handleMouseMove(event) {
-            const mouseX = event.offsetX;
-            const mouseY = event.offsetY;
-
+        function handleMouseMove(e) {
+            const mousePos = getMousePos(e);
             if (isDragging && selectedOverlay) {
-                const dx = mouseX - startX;
-                const dy = mouseY - startY;
-
-                selectedOverlay.x = initialX + dx;
-                selectedOverlay.y = initialY + dy;
-
+                const dx = mousePos.x - startX;
+                const dy = mousePos.y - startY;
+                selectedOverlay.x += dx;
+                selectedOverlay.y += dy;
+                startX = mousePos.x;
+                startY = mousePos.y;
                 drawCanvas();
-            }
-
-            if (isResizing && selectedOverlay) {
-                const dx = mouseX - startX;
-                const dy = mouseY - startY;
-
-		const scalingFactor = 3; // Adjusted scaling factor
-                selectedOverlay.w = Math.max(50, initialX + dx - selectedOverlay.x);
-                selectedOverlay.h = Math.max(50, initialY + dy - selectedOverlay.y);
-
+            } else if (isResizing && selectedOverlay) {
+                const dx = mousePos.x - startX;
+                const dy = mousePos.y - startY;
+                selectedOverlay.w = selectedOverlayInitialWidth + dx;
+                selectedOverlay.h = selectedOverlayInitialHeight + dy;
                 drawCanvas();
             }
         }
@@ -378,40 +371,79 @@
             isResizing = false;
         }
 
-        document.getElementById('rotateLeft').addEventListener('click', () => {
-            if (selectedOverlay) {
-                selectedOverlay.rot -= 15;
+        function handleKeyDown(e) {
+            if (e.key === "Delete" && selectedOverlay) {
+                overlays = overlays.filter(overlay => overlay !== selectedOverlay);
+                selectedOverlay = null;
                 drawCanvas();
             }
-        });
+        }
 
-        document.getElementById('rotateRight').addEventListener('click', () => {
+        function getMousePos(e) {
+            const rect = canvas.getBoundingClientRect();
+            return {
+                x: e.clientX - rect.left,
+                y: e.clientY - rect.top
+            };
+        }
+
+        function isMouseOverOverlay(pos, overlay) {
+            return pos.x > overlay.x && pos.x < overlay.x + overlay.w &&
+                   pos.y > overlay.y && pos.y < overlay.y + overlay.h;
+        }
+
+        function isMouseOverResizeHandle(pos, overlay) {
+            const handleSize = 10;
+            const handleX = overlay.x + overlay.w - handleSize;
+            const handleY = overlay.y + overlay.h - handleSize;
+            return pos.x > handleX && pos.x < handleX + handleSize &&
+                   pos.y > handleY && pos.y < handleY + handleSize;
+        }
+
+        function drawBoundingBox(overlay) {
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(overlay.x, overlay.y, overlay.w, overlay.h);
+            ctx.fillStyle = 'red';
+            ctx.fillRect(overlay.x + overlay.w - 10, overlay.y + overlay.h - 10, 10, 10);
+        }
+
+        function saveImage() {
+            drawCanvas(false);
+            const link = document.createElement('a');
+            link.href = canvas.toDataURL("image/png");
+            link.download = 'canvas_image.png';
+            link.click();
+            drawCanvas();
+        }
+
+        function rotateLeft() {
             if (selectedOverlay) {
-                selectedOverlay.rot += 15;
+                selectedOverlay.rot -= 10;
                 drawCanvas();
             }
-        });
+        }
 
-        document.getElementById('flipHorizontal').addEventListener('click', () => {
+        function rotateRight() {
+            if (selectedOverlay) {
+                selectedOverlay.rot += 10;
+                drawCanvas();
+            }
+        }
+
+        function flipHorizontal() {
             if (selectedOverlay) {
                 selectedOverlay.flipX *= -1;
                 drawCanvas();
             }
-        });
+        }
 
-        document.getElementById('flipVertical').addEventListener('click', () => {
+        function flipVertical() {
             if (selectedOverlay) {
                 selectedOverlay.flipY *= -1;
                 drawCanvas();
             }
-        });
-
-        saveBtn.addEventListener('click', () => {
-            const link = document.createElement('a');
-            link.href = canvas.toDataURL('image/png');
-            link.download = 'image_with_overlays.png';
-            link.click();
-        });
+        }
 
         fetchOvGallery();
     </script>
